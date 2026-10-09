@@ -7,36 +7,37 @@
 //   4. XIGNCODE monitor baslat
 //   5. Packet capture hook kur
 //   6. Game state reader baslat
-//
-// DLL_PROCESS_DETACH'te temiz cikis.
 
 #include "payload.h"
 
 static HMODULE g_self = NULL;
+static volatile BOOL g_initialized = FALSE;
+
+static BOOL is_target_process(void)
+{
+    char exeName[MAX_PATH];
+    GetModuleFileNameA(NULL, exeName, MAX_PATH);
+    return (strstr(exeName, "KnightOnLine") != NULL ||
+            strstr(exeName, "knightonline") != NULL);
+}
 
 static void startup(void)
 {
-    // 1. Anti-signature: PE header'i sil, imza kir
     antisig_wipe_header(g_self);
     antisig_morph_prologues(g_self);
 
-    // 2. Direct syscall table
     syscall_init();
 
-    // 3. Log
     log_init("C:\\ko_payload.log");
     log_write("INIT", "Payload yuklendi, base=0x%p", g_self);
 
-    // 4. XIGNCODE monitor
     xmon_start();
 
-    // 5. Packet capture
     if (pcap_start())
         log_write("INIT", "Packet capture aktif");
     else
-        log_write("INIT", "Packet capture BASARISIZ — adres gecersiz olabilir");
+        log_write("INIT", "Packet capture BASARISIZ");
 
-    // 6. Game state reader
     gstate_start();
 
     log_write("INIT", "Tum moduller yuklendi");
@@ -44,6 +45,8 @@ static void startup(void)
 
 static void payload_shutdown(void)
 {
+    if (!g_initialized) return;
+
     log_write("INIT", "Payload kapaniyor...");
 
     gstate_stop();
@@ -54,12 +57,33 @@ static void payload_shutdown(void)
     log_close();
 }
 
+// SetWindowsHookEx icin export — injector bu fonksiyonu cagirir
+__declspec(dllexport) LRESULT CALLBACK HookProc(int nCode, WPARAM wParam, LPARAM lParam)
+{
+    return CallNextHookEx(NULL, nCode, wParam, lParam);
+}
+
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved)
 {
     switch (reason) {
     case DLL_PROCESS_ATTACH:
         g_self = hModule;
         DisableThreadLibraryCalls(hModule);
+
+        if (!is_target_process())
+            break;
+
+        if (g_initialized)
+            break;
+        g_initialized = TRUE;
+
+        // DLL'i bellekte tut (hook kaldirilsa bile)
+        {
+            char selfPath[MAX_PATH];
+            GetModuleFileNameA(hModule, selfPath, MAX_PATH);
+            LoadLibraryA(selfPath);
+        }
+
         CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)startup, NULL, 0, NULL);
         break;
 

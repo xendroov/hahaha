@@ -12,7 +12,7 @@ set(CMAKE_C_STANDARD 11)
 add_executable(injector
     injector/injector.c
 )
-target_link_libraries(injector PRIVATE kernel32 advapi32)
+target_link_libraries(injector PRIVATE kernel32 advapi32 user32)
 
 # --- Payload DLL ---
 add_library(payload SHARED
