@@ -16,7 +16,7 @@ LDFLAGS = /nologo /MACHINE:X86
 
 OUTDIR = build
 
-all: $(OUTDIR) injector payload
+all: $(OUTDIR) injector payload modstom thijack lsp_install lsp_provider
 
 $(OUTDIR):
 	@if not exist $(OUTDIR) mkdir $(OUTDIR)
@@ -41,6 +41,26 @@ payload: $(OUTDIR) $(PAYLOAD_OBJS)
 
 {payload\}.c{$(OUTDIR)\}.obj:
 	$(CC) $(CFLAGS) /c /Fo$@ $<
+
+# --- Module Stomping Injector ---
+modstom: $(OUTDIR)
+	$(CC) $(CFLAGS) /Fe:$(OUTDIR)\modstom.exe injector\modstom.c \
+		/link $(LDFLAGS) kernel32.lib advapi32.lib
+
+# --- Thread Hijack Injector ---
+thijack: $(OUTDIR)
+	$(CC) $(CFLAGS) /Fe:$(OUTDIR)\thijack.exe injector\thijack.c \
+		/link $(LDFLAGS) kernel32.lib advapi32.lib
+
+# --- LSP Installer ---
+lsp_install: $(OUTDIR)
+	$(CC) $(CFLAGS) /Fe:$(OUTDIR)\lsp_install.exe injector\lsp_install.c \
+		/link $(LDFLAGS) ws2_32.lib sporder.lib
+
+# --- LSP Provider DLL ---
+lsp_provider: $(OUTDIR)
+	$(CC) $(CFLAGS) /Fe:$(OUTDIR)\lsp_provider.dll /LD injector\lsp_provider.c \
+		/link $(LDFLAGS) /DLL ws2_32.lib kernel32.lib
 
 clean:
 	@if exist $(OUTDIR) rmdir /s /q $(OUTDIR)
