@@ -35,35 +35,37 @@ static void get_log_path(char *out, DWORD size)
 
 static void startup(void)
 {
-    // 1. ONCE log baslat (hata ayiklama icin)
     char logPath[MAX_PATH];
     get_log_path(logPath, MAX_PATH);
     log_init(logPath);
     log_write("INIT", "Payload yuklendi, base=0x%p", g_self);
     log_write("INIT", "Log dosyasi: %s", logPath);
 
-    // 2. Syscall table
     if (syscall_init())
         log_write("INIT", "Syscall table hazir");
     else
-        log_write("INIT", "Syscall table KISMI (bazi numaralar bulunamadi)");
+        log_write("INIT", "Syscall table KISMI");
 
-    // 3. Anti-signature: sadece prologue morph
-    // NOT: header wipe YAPMA — LoadLibrary ile yuklendik, OS header'i kullaniyor
-    // antisig_wipe_header(g_self);  // manual-map icin, simdi degil
     int morphed = antisig_morph_prologues(g_self);
     log_write("INIT", "Prologue morph: %s", morphed ? "OK" : "degisiklik yok");
 
-    // 4. XIGNCODE monitor
     xmon_start();
 
-    // 5. Packet capture
+    log_write("INIT", "Hooklar 15 sn sonra kurulacak (oyun baslasin)...");
+    Sleep(15000);
+
+    BYTE *sndCheck = (BYTE *)KO_SND_FNC;
+    BYTE *rcvCheck = (BYTE *)KO_RECV_FNC;
+    log_write("INIT", "Send @ 0x%08X ilk 4 byte: %02X %02X %02X %02X",
+              KO_SND_FNC, sndCheck[0], sndCheck[1], sndCheck[2], sndCheck[3]);
+    log_write("INIT", "Recv @ 0x%08X ilk 4 byte: %02X %02X %02X %02X",
+              KO_RECV_FNC, rcvCheck[0], rcvCheck[1], rcvCheck[2], rcvCheck[3]);
+
     if (pcap_start())
         log_write("INIT", "Packet capture aktif");
     else
         log_write("INIT", "Packet capture BASARISIZ");
 
-    // 6. Game state reader
     gstate_start();
 
     log_write("INIT", "=== Tum moduller yuklendi ===");
