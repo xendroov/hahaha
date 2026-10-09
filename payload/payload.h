@@ -128,4 +128,8 @@ void gstate_start(void);
 void gstate_stop(void);
 void gstate_dump_once(void);
 
+// --- Payload entry (d3d9 proxy icinden cagirilir) ---
+void payload_startup(HMODULE selfModule);
+void payload_shutdown(void);
+
 #endif

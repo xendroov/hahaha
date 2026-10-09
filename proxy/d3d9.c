@@ -1,20 +1,19 @@
-// d3d9.dll proxy — DirectX 9 DLL arama sirasi ile payload yukle
+// d3d9.dll proxy — tek dosya, payload gomulu
 //
-// KnightOnLine bir DirectX 9 oyunu — d3d9.dll KESINLIKLE kullaniliyor.
-// version.dll calismadi cunku Windows 10 API set ile cozuyor (aramaya girmiyor).
-// d3d9.dll KnownDLL degil, API set degil — uygulama dizini ONCE aranir.
+// Tum payload kodu bu DLL icinde derlenir. Ayri payload.dll YOK.
+// XIGNCODE modul taramasinda sadece d3d9.dll gorur (DirectX DLL'i olarak normal).
 //
-// Oyun dizinine d3d9.dll (bu proxy) + payload.dll koyuyoruz.
-// OS oyunu baslatinca bizim d3d9.dll'i yukler, biz de:
-//   a) Gercek d3d9.dll'i System32'den yukleriz
-//   b) payload.dll'i yukleriz
-//
-// XIGNCODE henuz aktif degil — payload guvende yuklenir.
+// Akis:
+//   1. OS oyunu baslatir → d3d9.dll (bizimki) uygulama dizininden yuklenir
+//   2. DllMain: gercek d3d9.dll System32'den yuklenir, export'lar iletilir
+//   3. DllMain: payload_startup() cagirilir → arka plan thread baslar
+//   4. XIGNCODE baslar → modul listesinde sadece d3d9.dll (supheli degil)
 
 #include <windows.h>
+#include <string.h>
+#include "../payload/payload.h"
 
-static HMODULE g_realD3D9   = NULL;
-static HMODULE g_payload    = NULL;
+static HMODULE g_realD3D9 = NULL;
 
 // Gercek d3d9.dll fonksiyon isaretcileri
 static FARPROC pfn_Direct3DCreate9;
@@ -122,23 +121,12 @@ static BOOL load_real_d3d9(void)
     return (pfn_Direct3DCreate9 != NULL);
 }
 
-// --- payload.dll'i ayni dizinden yukle ---
-
-static void load_payload(void)
+static BOOL is_target_process(void)
 {
-    char myPath[MAX_PATH];
-    char payloadPath[MAX_PATH];
-
-    GetModuleFileNameA(NULL, myPath, MAX_PATH);
-    char *lastSlash = strrchr(myPath, '\\');
-    if (lastSlash) {
-        *lastSlash = '\0';
-        wsprintfA(payloadPath, "%s\\payload.dll", myPath);
-    } else {
-        wsprintfA(payloadPath, "payload.dll");
-    }
-
-    g_payload = LoadLibraryA(payloadPath);
+    char exeName[MAX_PATH];
+    GetModuleFileNameA(NULL, exeName, MAX_PATH);
+    _strlwr(exeName);
+    return (strstr(exeName, "knightonline") != NULL);
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved)
@@ -150,12 +138,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved)
         if (!load_real_d3d9())
             return FALSE;
 
-        load_payload();
+        if (is_target_process())
+            payload_startup(hModule);
         break;
 
     case DLL_PROCESS_DETACH:
-        if (g_payload)
-            FreeLibrary(g_payload);
+        payload_shutdown();
         if (g_realD3D9)
             FreeLibrary(g_realD3D9);
         break;

@@ -8,14 +8,16 @@ endif()
 
 set(CMAKE_C_STANDARD 11)
 
-# --- Injector EXE ---
+# --- Injector EXE (opsiyonel, artik d3d9 proxy kullaniliyor) ---
 add_executable(injector
     injector/injector.c
 )
 target_link_libraries(injector PRIVATE kernel32 advapi32 user32)
 
-# --- Payload DLL ---
-add_library(payload SHARED
+# --- d3d9.dll — proxy + payload tek dosyada ---
+add_library(d3d9_proxy SHARED
+    proxy/d3d9.c
+    proxy/d3d9.def
     payload/main.c
     payload/log.c
     payload/syscall.c
@@ -23,14 +25,6 @@ add_library(payload SHARED
     payload/xmon.c
     payload/pcap.c
     payload/gstate.c
-    payload/payload.def
-)
-target_link_libraries(payload PRIVATE kernel32 user32 advapi32)
-
-# --- d3d9.dll Proxy ---
-add_library(d3d9_proxy SHARED
-    proxy/d3d9.c
-    proxy/d3d9.def
 )
 set_target_properties(d3d9_proxy PROPERTIES OUTPUT_NAME "d3d9")
-target_link_libraries(d3d9_proxy PRIVATE kernel32 user32)
+target_link_libraries(d3d9_proxy PRIVATE kernel32 user32 advapi32)
