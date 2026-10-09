@@ -126,7 +126,11 @@ static BOOL is_target_process(void)
     char exeName[MAX_PATH];
     GetModuleFileNameA(NULL, exeName, MAX_PATH);
     _strlwr(exeName);
-    return (strstr(exeName, "knightonline") != NULL);
+    char t[16];
+    t[0]='k'; t[1]='n'; t[2]='i'; t[3]='g'; t[4]='h'; t[5]='t';
+    t[6]='o'; t[7]='n'; t[8]='l'; t[9]='i'; t[10]='n'; t[11]='e';
+    t[12]='\0';
+    return (strstr(exeName, t) != NULL);
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved)

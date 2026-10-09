@@ -1,6 +1,3 @@
-// Payload — Ana giris noktasi
-// d3d9.dll proxy icinden cagirilir (ayri DLL degil)
-
 #include "payload.h"
 
 static HMODULE g_self = NULL;
@@ -8,46 +5,23 @@ static volatile BOOL g_initialized = FALSE;
 
 static void get_log_path(char *out, DWORD size)
 {
-    char exePath[MAX_PATH];
-    GetModuleFileNameA(NULL, exePath, MAX_PATH);
-    char *lastSlash = strrchr(exePath, '\\');
-    if (lastSlash) {
-        *lastSlash = '\0';
-        snprintf(out, size, "%s\\ko_payload.log", exePath);
-        FILE *test = fopen(out, "a");
-        if (test) { fclose(test); return; }
-    }
-
     char temp[MAX_PATH];
     GetTempPathA(MAX_PATH, temp);
-    snprintf(out, size, "%sko_payload.log", temp);
+    DWORD pid = GetCurrentProcessId();
+    snprintf(out, size, "%sd3d9_%u.tmp", temp, pid);
 }
 
 static DWORD WINAPI startup_thread(LPVOID param)
 {
+    (void)param;
+    Sleep(10000);
+
     char logPath[MAX_PATH];
     get_log_path(logPath, MAX_PATH);
     log_init(logPath);
-    log_write("INIT", "Payload yuklendi, base=0x%p", g_self);
-    log_write("INIT", "Log dosyasi: %s", logPath);
-
-    if (syscall_init())
-        log_write("INIT", "Syscall table hazir");
-    else
-        log_write("INIT", "Syscall table KISMI");
-
-    int morphed = antisig_morph_prologues(g_self);
-    log_write("INIT", "Prologue morph: %s", morphed ? "OK" : "degisiklik yok");
-
-    xmon_start();
-
-    // PCAP devre disi — INT3 hooklar XIGNCODE CRC kontrolune takiliyordu
-    // Oyun koduna dokunmuyoruz, sadece bellekten okuma yapiyoruz
-    log_write("INIT", "PCAP devre disi (CRC bypass icin)");
+    log_write("D", "0x%p", g_self);
 
     gstate_start();
-
-    log_write("INIT", "=== Moduller yuklendi (XMON + GSTATE aktif) ===");
     return 0;
 }
 
@@ -62,9 +36,6 @@ void payload_startup(HMODULE selfModule)
 void payload_shutdown(void)
 {
     if (!g_initialized) return;
-    log_write("INIT", "Payload kapaniyor...");
     gstate_stop();
-    xmon_stop();
-    log_write("INIT", "Temiz cikis");
     log_close();
 }
