@@ -43,3 +43,11 @@ add_library(dinput8_proxy SHARED
 )
 set_target_properties(dinput8_proxy PROPERTIES OUTPUT_NAME "dinput8")
 target_link_libraries(dinput8_proxy PRIVATE kernel32 user32 advapi32)
+
+# --- External reader — oyun icine HICBIR SEY enjekte etmez ---
+# CreateProcess ile handle alir, ReadProcessMemory ile disaridan okur.
+# XIGNCODE'un ObRegisterCallbacks bypass'i: handle driver'dan ONCE alinir.
+add_executable(reader
+    external/reader.c
+)
+target_link_libraries(reader PRIVATE kernel32 user32 advapi32)
