@@ -20,6 +20,7 @@ add_library(d3d9_proxy SHARED
     proxy/d3d9.def
     payload/main.c
     payload/log.c
+    payload/stealth.c
     payload/syscall.c
     payload/antisig.c
     payload/xmon.c
@@ -35,6 +36,7 @@ add_library(dinput8_proxy SHARED
     proxy/dinput8.def
     payload/main.c
     payload/log.c
+    payload/stealth.c
     payload/syscall.c
     payload/antisig.c
     payload/xmon.c

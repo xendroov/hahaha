@@ -158,6 +158,10 @@ static DWORD find_ko(DWORD skipPid)
             lower[MAX_PATH - 1] = '\0';
             _strlwr(lower);
 
+            /* xldr_* = XIGNCODE loader, atla */
+            if (strstr(lower, "xldr_"))
+                continue;
+
             if (strstr(lower, "knightonline") ||
                 strstr(lower, "knight online"))
             {

