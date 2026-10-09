@@ -27,10 +27,10 @@ add_library(payload SHARED
 )
 target_link_libraries(payload PRIVATE kernel32 user32 advapi32)
 
-# --- Version.dll Proxy ---
-add_library(version SHARED
-    proxy/version.c
-    proxy/version.def
+# --- d3d9.dll Proxy ---
+add_library(d3d9_proxy SHARED
+    proxy/d3d9.c
+    proxy/d3d9.def
 )
-set_target_properties(version PROPERTIES OUTPUT_NAME "version")
-target_link_libraries(version PRIVATE kernel32 user32)
+set_target_properties(d3d9_proxy PROPERTIES OUTPUT_NAME "d3d9")
+target_link_libraries(d3d9_proxy PRIVATE kernel32 user32)

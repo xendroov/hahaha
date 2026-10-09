@@ -1,0 +1,19 @@
+LIBRARY d3d9
+EXPORTS
+    Direct3DCreate9                  = p_Direct3DCreate9
+    Direct3DCreate9Ex                = p_Direct3DCreate9Ex
+    Direct3DCreate9On12              = p_Direct3DCreate9On12
+    Direct3DCreate9On12Ex            = p_Direct3DCreate9On12Ex
+    Direct3DShaderValidatorCreate9   = p_Direct3DShaderValidatorCreate9
+    D3DPERF_BeginEvent               = p_D3DPERF_BeginEvent
+    D3DPERF_EndEvent                 = p_D3DPERF_EndEvent
+    D3DPERF_GetStatus                = p_D3DPERF_GetStatus
+    D3DPERF_QueryRepeatFrame         = p_D3DPERF_QueryRepeatFrame
+    D3DPERF_SetMarker                = p_D3DPERF_SetMarker
+    D3DPERF_SetOptions               = p_D3DPERF_SetOptions
+    D3DPERF_SetRegion                = p_D3DPERF_SetRegion
+    DebugSetLevel                    = p_DebugSetLevel
+    DebugSetMute                     = p_DebugSetMute
+    PSGPError                        = p_PSGPError
+    PSGPSampleTexture                = p_PSGPSampleTexture
+    Direct3D9ForceHybridEnumeration  = p_Direct3D9ForceHybridEnumeration
