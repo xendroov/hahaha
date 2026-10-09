@@ -23,5 +23,6 @@ add_library(payload SHARED
     payload/xmon.c
     payload/pcap.c
     payload/gstate.c
+    payload/payload.def
 )
 target_link_libraries(payload PRIVATE kernel32 user32 advapi32)
