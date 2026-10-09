@@ -20,7 +20,17 @@ static DWORD extract_number(BYTE *func)
     return 0xFFFFFFFF;
 }
 
-// Disk üzerindeki ntdll'den syscall numarasını çöz
+static DWORD rva2offset(DWORD rva, IMAGE_SECTION_HEADER *sec, WORD nSec)
+{
+    WORD i;
+    for (i = 0; i < nSec; i++) {
+        if (rva >= sec[i].VirtualAddress &&
+            rva < sec[i].VirtualAddress + sec[i].Misc.VirtualSize)
+            return rva - sec[i].VirtualAddress + sec[i].PointerToRawData;
+    }
+    return 0;
+}
+
 static DWORD resolve_from_disk(const char *funcName)
 {
     HANDLE hFile = CreateFileA("C:\\Windows\\System32\\ntdll.dll",
@@ -39,34 +49,25 @@ static DWORD resolve_from_disk(const char *funcName)
     IMAGE_DOS_HEADER *dos = (IMAGE_DOS_HEADER *)buf;
     IMAGE_NT_HEADERS *nt = (IMAGE_NT_HEADERS *)(buf + dos->e_lfanew);
     IMAGE_SECTION_HEADER *sec = IMAGE_FIRST_SECTION(nt);
-
-    // RVA → file offset helper
-    #define R2O(rva) ({ \
-        DWORD _r = 0; \
-        for (WORD _i = 0; _i < nt->FileHeader.NumberOfSections; _i++) { \
-            if ((rva) >= sec[_i].VirtualAddress && \
-                (rva) < sec[_i].VirtualAddress + sec[_i].Misc.VirtualSize) { \
-                _r = (rva) - sec[_i].VirtualAddress + sec[_i].PointerToRawData; \
-                break; } } _r; })
+    WORD nSec = nt->FileHeader.NumberOfSections;
 
     DWORD expRVA = nt->OptionalHeader.DataDirectory[0].VirtualAddress;
-    IMAGE_EXPORT_DIRECTORY *exp = (IMAGE_EXPORT_DIRECTORY *)(buf + R2O(expRVA));
+    IMAGE_EXPORT_DIRECTORY *expDir = (IMAGE_EXPORT_DIRECTORY *)(buf + rva2offset(expRVA, sec, nSec));
 
-    DWORD *names = (DWORD *)(buf + R2O(exp->AddressOfNames));
-    WORD *ords = (WORD *)(buf + R2O(exp->AddressOfNameOrdinals));
-    DWORD *funcs = (DWORD *)(buf + R2O(exp->AddressOfFunctions));
+    DWORD *names = (DWORD *)(buf + rva2offset(expDir->AddressOfNames, sec, nSec));
+    WORD *ords = (WORD *)(buf + rva2offset(expDir->AddressOfNameOrdinals, sec, nSec));
+    DWORD *funcs = (DWORD *)(buf + rva2offset(expDir->AddressOfFunctions, sec, nSec));
 
     DWORD result = 0xFFFFFFFF;
-    for (DWORD i = 0; i < exp->NumberOfNames; i++) {
-        char *name = (char *)(buf + R2O(names[i]));
+    for (DWORD i = 0; i < expDir->NumberOfNames; i++) {
+        char *name = (char *)(buf + rva2offset(names[i], sec, nSec));
         if (strcmp(name, funcName) == 0) {
-            DWORD funcOffset = R2O(funcs[ords[i]]);
+            DWORD funcOffset = rva2offset(funcs[ords[i]], sec, nSec);
             result = extract_number(buf + funcOffset);
             break;
         }
     }
 
-    #undef R2O
     VirtualFree(buf, 0, MEM_RELEASE);
     return result;
 }

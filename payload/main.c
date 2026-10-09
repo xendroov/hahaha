@@ -42,7 +42,7 @@ static void startup(void)
     log_write("INIT", "Tum moduller yuklendi");
 }
 
-static void shutdown(void)
+static void payload_shutdown(void)
 {
     log_write("INIT", "Payload kapaniyor...");
 
@@ -64,7 +64,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved)
         break;
 
     case DLL_PROCESS_DETACH:
-        shutdown();
+        payload_shutdown();
         break;
     }
     return TRUE;
