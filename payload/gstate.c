@@ -1,60 +1,16 @@
 // Game State Reader — Knight Online bellek okuyucu
 //
-// Periyodik olarak oyun durumunu loglar:
-//   - Karakter pozisyonu (X, Y, Z)
-//   - HP / Max HP / MP / Max MP
-//   - Hedef bilgisi
-//   - Zone / Map ID
+// KO_PTR_CHR (0x01115574) uzerinden pointer chain:
+//   [KO_PTR_CHR] -> player struct base
+//   + KO_OFF_* -> her alan
 //
-// Adresler: KnightOnLine.exe'nin sabit base'ine gore.
-// Guncellemeler icin gstate_set_offsets() kullanilabilir.
+// 1 saniye periyotla loglar.
 
 #include "payload.h"
 #include <string.h>
 
 static volatile BOOL g_gstate_running = FALSE;
 static HANDLE g_gstate_thread = NULL;
-
-// Known base pointers (KnightOnLine.exe static addresses)
-// These are starting points — actual values read through pointer chains
-typedef struct {
-    DWORD pPlayerBase;    // Player info base pointer
-    DWORD oPositionX;     // Offset: float X
-    DWORD oPositionY;     // Offset: float Y
-    DWORD oPositionZ;     // Offset: float Z
-    DWORD oHP;            // Offset: current HP
-    DWORD oMaxHP;         // Offset: max HP
-    DWORD oMP;            // Offset: current MP
-    DWORD oMaxMP;         // Offset: max MP
-    DWORD oLevel;         // Offset: level
-    DWORD oName;          // Offset: character name string
-    DWORD oZoneID;        // Offset: zone/map ID
-    DWORD oTargetID;      // Offset: current target ID
-    DWORD pSocketBase;    // CAPISocket instance pointer
-    DWORD oEncryptFlag;   // Encryption enabled flag
-} GAME_OFFSETS;
-
-static GAME_OFFSETS g_offsets = {
-    .pPlayerBase  = 0x0110D6A0,
-    .oPositionX   = 0x08,
-    .oPositionY   = 0x10,
-    .oPositionZ   = 0x0C,
-    .oHP          = 0x28,
-    .oMaxHP       = 0x2C,
-    .oMP          = 0x30,
-    .oMaxMP       = 0x34,
-    .oLevel       = 0x24,
-    .oName        = 0x60,
-    .oZoneID      = 0x04,
-    .oTargetID    = 0x48,
-    .pSocketBase  = 0x01115A38,
-    .oEncryptFlag = 0x011159B4,
-};
-
-void gstate_set_offsets(GAME_OFFSETS *offsets)
-{
-    memcpy(&g_offsets, offsets, sizeof(GAME_OFFSETS));
-}
 
 static BOOL safe_read(DWORD addr, void *out, SIZE_T size)
 {
@@ -83,33 +39,53 @@ static float deref_float(DWORD ptr)
 
 void gstate_dump_once(void)
 {
-    DWORD playerBase = deref(g_offsets.pPlayerBase);
+    DWORD playerBase = deref(KO_PTR_CHR);
     if (!playerBase) {
-        log_write("GSTATE", "Player base NULL — oyun yuklenmemis olabilir");
+        log_write("GSTATE", "Player base NULL — karakter secilmemis");
         return;
     }
 
-    float x = deref_float(playerBase + g_offsets.oPositionX);
-    float y = deref_float(playerBase + g_offsets.oPositionY);
-    float z = deref_float(playerBase + g_offsets.oPositionZ);
-
-    DWORD hp    = deref(playerBase + g_offsets.oHP);
-    DWORD maxhp = deref(playerBase + g_offsets.oMaxHP);
-    DWORD mp    = deref(playerBase + g_offsets.oMP);
-    DWORD maxmp = deref(playerBase + g_offsets.oMaxMP);
-    DWORD level = deref(playerBase + g_offsets.oLevel);
-    DWORD zone  = deref(playerBase + g_offsets.oZoneID);
-    DWORD target = deref(playerBase + g_offsets.oTargetID);
+    // Kimlik
+    DWORD id    = deref(playerBase + KO_OFF_ID);
+    DWORD cls   = deref(playerBase + KO_OFF_CLASS);
+    DWORD level = deref(playerBase + KO_OFF_LEVEL);
+    DWORD nation = deref(playerBase + KO_OFF_NATION);
+    DWORD race  = deref(playerBase + KO_OFF_RACE);
 
     char name[32] = {0};
-    safe_read(playerBase + g_offsets.oName, name, sizeof(name) - 1);
+    safe_read(playerBase + KO_OFF_NAME, name, sizeof(name) - 1);
 
-    DWORD encFlag = deref(g_offsets.oEncryptFlag);
+    // Saglık
+    DWORD hp    = deref(playerBase + KO_OFF_HP);
+    DWORD maxhp = deref(playerBase + KO_OFF_MAXHP);
+    DWORD mp    = deref(playerBase + KO_OFF_MP);
+    DWORD maxmp = deref(playerBase + KO_OFF_MAX_MP);
+    DWORD gold  = deref(playerBase + KO_OFF_GOLD);
 
-    log_write("GSTATE", "Player: %s Lv%u Zone=%u", name, level, zone);
-    log_write("GSTATE", "  Pos: %.1f, %.1f, %.1f", x, y, z);
-    log_write("GSTATE", "  HP: %u/%u  MP: %u/%u", hp, maxhp, mp, maxmp);
-    log_write("GSTATE", "  Target: %u  Encrypt: %u", target, encFlag);
+    // Pozisyon
+    float posX = deref_float(playerBase + KO_OFF_POSX);
+    float posY = deref_float(playerBase + KO_OFF_POSY);
+    float posZ = deref_float(playerBase + KO_OFF_POSZ);
+
+    // Hedef
+    DWORD target = deref(playerBase + KO_OFF_TARGET);
+
+    // Kamera mesafesi
+    float camDist = 0.0f;
+    DWORD camBase = deref(KO_CAMERA_HOOK);
+    if (camBase)
+        camDist = deref_float(camBase + KO_CAMERA_DISTANCE_OFF);
+
+    log_write("GSTATE", "%s [ID:%u] Lv%u Class:%u Nation:%u Race:%u",
+              name, id, level, cls, nation, race);
+    log_write("GSTATE", "  HP: %u/%u  MP: %u/%u  Gold: %u",
+              hp, maxhp, mp, maxmp, gold);
+    log_write("GSTATE", "  Pos: %.1f, %.1f, %.1f  Target: %u",
+              posX, posY, posZ, target);
+
+    // Packet socket durumu
+    DWORD pktBase = deref(KO_PTR_PKT);
+    log_write("GSTATE", "  Socket: 0x%08X  CamDist: %.1f", pktBase, camDist);
 }
 
 static DWORD WINAPI gstate_thread(LPVOID param)
@@ -118,12 +94,11 @@ static DWORD WINAPI gstate_thread(LPVOID param)
 
     while (g_gstate_running) {
         cycle++;
-        if (cycle % 10 == 1) // her 10 saniyede detayli log
+        if (cycle % 10 == 1)
             log_write("GSTATE", "--- Cycle %d ---", cycle);
 
         gstate_dump_once();
 
-        // 1 saniyede bir oku
         for (int i = 0; i < 10 && g_gstate_running; i++)
             Sleep(100);
     }
@@ -137,8 +112,7 @@ void gstate_start(void)
     if (g_gstate_running) return;
     g_gstate_running = TRUE;
     g_gstate_thread = CreateThread(NULL, 0, gstate_thread, NULL, 0, NULL);
-    log_write("GSTATE", "Game state reader baslatildi (player base @ 0x%08X)",
-              g_offsets.pPlayerBase);
+    log_write("GSTATE", "Game state reader baslatildi (CHR=0x%08X)", KO_PTR_CHR);
 }
 
 void gstate_stop(void)
