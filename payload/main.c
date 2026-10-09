@@ -41,24 +41,13 @@ static DWORD WINAPI startup_thread(LPVOID param)
 
     xmon_start();
 
-    log_write("INIT", "Hooklar 20 sn sonra kurulacak...");
-    Sleep(20000);
-
-    BYTE *sndCheck = (BYTE *)KO_SND_FNC;
-    BYTE *rcvCheck = (BYTE *)KO_RECV_FNC;
-    log_write("INIT", "Send @ 0x%08X: %02X %02X %02X %02X",
-              KO_SND_FNC, sndCheck[0], sndCheck[1], sndCheck[2], sndCheck[3]);
-    log_write("INIT", "Recv @ 0x%08X: %02X %02X %02X %02X",
-              KO_RECV_FNC, rcvCheck[0], rcvCheck[1], rcvCheck[2], rcvCheck[3]);
-
-    if (pcap_start())
-        log_write("INIT", "Packet capture aktif");
-    else
-        log_write("INIT", "Packet capture BASARISIZ");
+    // PCAP devre disi — INT3 hooklar XIGNCODE CRC kontrolune takiliyordu
+    // Oyun koduna dokunmuyoruz, sadece bellekten okuma yapiyoruz
+    log_write("INIT", "PCAP devre disi (CRC bypass icin)");
 
     gstate_start();
 
-    log_write("INIT", "=== Tum moduller yuklendi ===");
+    log_write("INIT", "=== Moduller yuklendi (XMON + GSTATE aktif) ===");
     return 0;
 }
 
@@ -75,7 +64,6 @@ void payload_shutdown(void)
     if (!g_initialized) return;
     log_write("INIT", "Payload kapaniyor...");
     gstate_stop();
-    pcap_stop();
     xmon_stop();
     log_write("INIT", "Temiz cikis");
     log_close();
