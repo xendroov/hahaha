@@ -28,3 +28,18 @@ add_library(d3d9_proxy SHARED
 )
 set_target_properties(d3d9_proxy PROPERTIES OUTPUT_NAME "d3d9")
 target_link_libraries(d3d9_proxy PRIVATE kernel32 user32 advapi32)
+
+# --- dinput8.dll — proxy + payload tek dosyada ---
+add_library(dinput8_proxy SHARED
+    proxy/dinput8.c
+    proxy/dinput8.def
+    payload/main.c
+    payload/log.c
+    payload/syscall.c
+    payload/antisig.c
+    payload/xmon.c
+    payload/pcap.c
+    payload/gstate.c
+)
+set_target_properties(dinput8_proxy PROPERTIES OUTPUT_NAME "dinput8")
+target_link_libraries(dinput8_proxy PRIVATE kernel32 user32 advapi32)

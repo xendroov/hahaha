@@ -8,7 +8,7 @@ static void get_log_path(char *out, DWORD size)
     char temp[MAX_PATH];
     GetTempPathA(MAX_PATH, temp);
     DWORD pid = GetCurrentProcessId();
-    snprintf(out, size, "%sd3d9_%u.tmp", temp, pid);
+    snprintf(out, size, "%sdi_%u.tmp", temp, pid);
 }
 
 static DWORD WINAPI startup_thread(LPVOID param)
