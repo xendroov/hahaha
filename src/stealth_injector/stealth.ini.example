@@ -1,0 +1,38 @@
+; Stealth Framework Konfigürasyon
+; Bu dosyayı %TEMP%\stealth.ini olarak kopyalayın
+
+[AntiSignature]
+; PE header silme (MZ/PE imzası yok — xmag.xem modül taramasını atlatır)
+HeaderWipe=1
+; Function prologue dönüştürme (MSVC pattern kırılır — RawCodeInjectedB)
+PrologueMorph=1
+; Runtime kod şifreleme (performans etkisi var, sadece gerekirse)
+CodeEncrypt=0
+
+[VM]
+; VM evasion (VMware/VBox/QEMU gizleme)
+; Fiziksel makinede çalışıyorsanız 0 yapın
+Evasion=1
+
+[Syscall]
+; Direct syscall (ntdll'e dokunmadan kernel'a git)
+DirectSyscall=1
+
+[Capture]
+; Paket yakalama (CAPISocket::Send hook)
+Enabled=0
+; 1=Hardware Breakpoint (0 byte değişiklik, %20 DR tarama riski)
+; 0=VEH INT3 (1 byte değişiklik, CRC riski)
+UseHWBP=1
+; Log dosyası yolu
+LogPath=C:\Temp\packets.log
+
+[Timing]
+; XIGNCODE init bekleme süresi (ms)
+; xcorona.xem'in HideFromDebugger flood'u ~2sn'de başlıyor
+; 3000ms güvenli başlangıç penceresi
+InitDelay=3000
+; Otomatik kapatma süresi (ms, 0=kapalı)
+; 10000 = 10sn — v5 dump'ta güvenli olan süre
+; 0 = manuel kapatma (DLL eject ile)
+AutoCleanup=0
