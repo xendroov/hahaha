@@ -26,3 +26,11 @@ add_library(payload SHARED
     payload/payload.def
 )
 target_link_libraries(payload PRIVATE kernel32 user32 advapi32)
+
+# --- Version.dll Proxy ---
+add_library(version SHARED
+    proxy/version.c
+    proxy/version.def
+)
+set_target_properties(version PROPERTIES OUTPUT_NAME "version")
+target_link_libraries(version PRIVATE kernel32 user32)
