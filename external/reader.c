@@ -14,8 +14,8 @@
  * driver yuklenmeden ONCE. ReadProcessMemory ile disaridan okuyoruz.
  *
  * Kullanim:
- *   reader.exe "C:\KO\KnightOnLine.exe"          (oyunu baslatir)
- *   reader.exe --watch                            (oyunu bekler, hizli attach)
+ *   reader.exe "C:\NTTGame\KnightOnlineEn\KnightOnLine.exe"
+ *   reader.exe --watch
  */
 
 /* ---- KO offset tablosu ---- */
@@ -139,7 +139,7 @@ static void dump_state(void)
 }
 
 /* ---- Process search ---- */
-static DWORD find_ko(void)
+static DWORD find_ko(DWORD skipPid)
 {
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snap == INVALID_HANDLE_VALUE) return 0;
@@ -150,16 +150,32 @@ static DWORD find_ko(void)
 
     if (Process32First(snap, &pe)) {
         do {
-            _strlwr(pe.szExeFile);
-            if (strstr(pe.szExeFile, "knightonline"))
+            if (pe.th32ProcessID == skipPid)
+                continue;
+
+            char lower[MAX_PATH];
+            strncpy(lower, pe.szExeFile, MAX_PATH - 1);
+            lower[MAX_PATH - 1] = '\0';
+            _strlwr(lower);
+
+            if (strstr(lower, "knightonline") ||
+                strstr(lower, "knight online"))
             {
                 pid = pe.th32ProcessID;
+                printf("    found: %s (PID %u)\n", pe.szExeFile, pid);
                 break;
             }
         } while (Process32Next(snap, &pe));
     }
     CloseHandle(snap);
     return pid;
+}
+
+/* ---- Check if process is alive ---- */
+static BOOL is_alive(HANDLE h)
+{
+    DWORD code = 0;
+    return GetExitCodeProcess(h, &code) && code == STILL_ACTIVE;
 }
 
 /* ---- Launch mode: CreateProcess ---- */
@@ -181,10 +197,14 @@ static BOOL launch_game(const char *path)
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {0};
 
+    printf("[*] Launching: %s\n", cmdLine);
+    printf("[*] WorkDir:   %s\n", gameDir);
+
     if (!CreateProcessA(NULL, cmdLine, NULL, NULL,
                         FALSE, 0, NULL, gameDir, &si, &pi))
     {
         printf("[!] CreateProcess failed: %u\n", GetLastError());
+        printf("[!] Check the path and try again.\n");
         return FALSE;
     }
 
@@ -192,35 +212,91 @@ static BOOL launch_game(const char *path)
     g_pid  = pi.dwProcessId;
     CloseHandle(pi.hThread);
 
-    printf("[+] Game launched  PID %u\n", g_pid);
+    printf("[+] Launched PID %u\n", g_pid);
+
+    /* Launcher olabilir — 5sn bekle, cikarsa child'i ara */
+    for (int i = 0; i < 50; i++) {
+        Sleep(100);
+        if (!is_alive(g_proc)) {
+            printf("[*] PID %u exited (launcher?). Searching child...\n", g_pid);
+            CloseHandle(g_proc);
+            g_proc = NULL;
+
+            Sleep(1000);
+
+            DWORD childPid = find_ko(g_pid);
+            if (childPid) {
+                g_proc = OpenProcess(
+                    PROCESS_VM_READ | PROCESS_QUERY_INFORMATION,
+                    FALSE, childPid);
+                if (g_proc) {
+                    g_pid = childPid;
+                    printf("[+] Found child game PID %u\n", g_pid);
+                    return TRUE;
+                }
+                printf("[!] OpenProcess child failed: %u\n", GetLastError());
+            } else {
+                printf("[!] No child KnightOnLine process found.\n");
+            }
+            return FALSE;
+        }
+    }
+
     printf("[+] Handle acquired BEFORE XIGNCODE driver load\n");
     printf("[+] ObRegisterCallbacks cannot strip this handle\n\n");
     return TRUE;
 }
 
-/* ---- Watch mode: poll until game appears, grab handle instantly ---- */
+/* ---- Watch mode: poll until game appears, retry on quick exit ---- */
 static BOOL watch_game(void)
 {
     printf("[*] Waiting for KnightOnLine process...\n");
     printf("[*] Launch the game normally. We will grab the handle.\n\n");
 
+    DWORD skipPid = 0;
+
     while (g_running) {
-        DWORD pid = find_ko();
+        DWORD pid = find_ko(skipPid);
         if (pid) {
-            g_proc = OpenProcess(
+            HANDLE h = OpenProcess(
                 PROCESS_VM_READ | PROCESS_QUERY_INFORMATION,
                 FALSE, pid);
 
-            if (g_proc) {
-                g_pid = pid;
-                printf("[+] Attached to PID %u\n", pid);
-                return TRUE;
+            if (!h) {
+                printf("[!] OpenProcess PID %u failed: %u\n", pid, GetLastError());
+                printf("[!] XIGNCODE may have blocked. Trying next...\n");
+                skipPid = pid;
+                continue;
             }
 
-            printf("[!] OpenProcess failed: %u\n", GetLastError());
-            printf("[!] XIGNCODE driver already blocked handle.\n");
-            printf("[!] Use launch mode instead: reader.exe <game path>\n");
-            return FALSE;
+            if (!is_alive(h)) {
+                printf("[*] PID %u already exited, skipping.\n", pid);
+                CloseHandle(h);
+                skipPid = pid;
+                continue;
+            }
+
+            printf("[+] Attached to PID %u — checking stability...\n", pid);
+
+            /* 3sn bekle, hala yasiyorsa gercek oyun process'i */
+            BOOL stable = TRUE;
+            for (int i = 0; i < 30; i++) {
+                Sleep(100);
+                if (!is_alive(h)) {
+                    printf("[*] PID %u exited quickly (launcher). Searching again...\n", pid);
+                    CloseHandle(h);
+                    skipPid = pid;
+                    stable = FALSE;
+                    break;
+                }
+            }
+
+            if (stable) {
+                g_proc = h;
+                g_pid  = pid;
+                printf("[+] Game process confirmed PID %u\n", pid);
+                return TRUE;
+            }
         }
         Sleep(50);
     }
@@ -237,8 +313,8 @@ int main(int argc, char **argv)
 
     if (argc < 2) {
         printf("Usage:\n");
-        printf("  reader.exe \"C:\\KO\\KnightOnLine.exe\"   (launch mode)\n");
-        printf("  reader.exe --watch                      (attach mode)\n");
+        printf("  reader.exe \"C:\\NTTGame\\KnightOnlineEn\\KnightOnLine.exe\"\n");
+        printf("  reader.exe --watch\n");
         return 1;
     }
 
@@ -266,11 +342,8 @@ int main(int argc, char **argv)
 
     /* Main loop */
     while (g_running) {
-        DWORD exitCode = 0;
-        if (!GetExitCodeProcess(g_proc, &exitCode) ||
-            exitCode != STILL_ACTIVE)
-        {
-            logf("R", "Game exited (%u)", exitCode);
+        if (!is_alive(g_proc)) {
+            logf("R", "Game exited");
             break;
         }
 
