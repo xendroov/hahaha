@@ -115,8 +115,11 @@ BOOL syscall_init(void);
 BOOL antisig_wipe_header(PVOID base);
 BOOL antisig_morph_prologues(PVOID base);
 
-// --- Stealth (PEB unlink + PE wipe) ---
+// --- Stealth (PEB unlink + PE wipe + file rename + section remap) ---
 void stealth_hide(HMODULE hMod);
+void stealth_restore(void);
+const char *stealth_get_orig_path(void);
+const char *stealth_get_moved_path(void);
 
 // --- XIGNCODE Monitor ---
 void xmon_start(void);
