@@ -129,6 +129,11 @@ void xmon_stop(void);
 BOOL pcap_start(void);
 void pcap_stop(void);
 
+// --- Forensic Trace Cleanup ---
+void forensic_start(void);
+void forensic_stop(void);
+void forensic_strip_injector(const char *injectorPath);
+
 // --- Game State Reader ---
 void gstate_start(void);
 void gstate_stop(void);

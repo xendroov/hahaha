@@ -3,27 +3,44 @@
 #include <tlhelp32.h>
 
 /*
- * XIGNCODE3 Monitor & Bypass
+ * XIGNCODE3 Monitor & Bypass — v2
  *
- * xigncode.log analizinden (3000 kayit):
- *   - CheckRemoteDebuggerPresent: 91 cagri, 3 dalga (her 4 kayitta 3'u bu)
- *   - NTDLL.DLL integrity check: kayit #607
- *   - server.ini okuma: kayit #609, #1866
- *   - Toplu tarama: ~493 kayit (modul/bellek)
- *   - Rutin rapor: 1478 kayit (0B 10 tipi)
+ * Tespit vektorleri (kullanici raporundan):
  *
- * Bypass:
- *   1) CheckRemoteDebuggerPresent hook -> her zaman FALSE
- *   2) ntdll'e dokunmuyoruz (direct syscall ile bypass)
- *   3) PEB.BeingDebugged = 0
- *   4) NtGlobalFlag temizle
- *   5) XIGNCODE modul aktivitesi izleme
+ *   ANTI-DEBUG:
+ *   1) CheckRemoteDebuggerPresent — 91 cagri, 3 dalga
+ *   2) Hardware Breakpoint (DR0-DR7) — GetThreadContext ile kontrol
+ *   3) PEB.BeingDebugged + NtGlobalFlag + Heap flags
+ *   4) NTDLL integrity check (hook tespiti)
+ *
+ *   MODUL TARAMA:
+ *   5) Debugger kara listesi: CE, x64dbg, OllyDbg, WinDbg, PH, PE Tools
+ *   6) XIGNCODE modulleri: x3.xem, xcorona.xem, xmag.xem, xnina.xem
+ *   7) VM/Sandbox: VBox, VMware, Sandboxie DLL'leri
+ *
+ *   GRAFIK:
+ *   8) DXGI + D3D11 SwapChain vtable hook tespiti
+ *      (d3d9 kontrolu YOK — proxy guvenli)
+ *
+ *   FORENSIC:
+ *   9) Prefetch scanner — C:\Windows\Prefetch\*.pf
+ *  10) USN Journal — NTFS degisim kaydi
+ *  11) Icon hash — PE resource karsilastirmasi
+ *  12) AHK & macro tespiti
+ *
+ * Bypass katmanlari:
+ *   A) CRDBP hook → her zaman FALSE
+ *   B) GetThreadContext hook → DR0-DR7 sifirla
+ *   C) PEB/Heap/NtGlobalFlag patch
+ *   D) ntdll'e dokunmuyoruz (direct syscall)
+ *   E) Periyodik DR register temizligi
+ *   F) XIGNCODE modul/hook izleme
  */
+
+// --- Anti-Debug: CRDBP ---
 
 static BYTE g_crdbp_orig[8];
 static BYTE *g_crdbp_addr = NULL;
-static volatile BOOL g_xmon_running = FALSE;
-static HANDLE g_xmon_thread = NULL;
 
 static BOOL WINAPI fake_crdbp(HANDLE hProcess, PBOOL pbDebuggerPresent)
 {
@@ -32,6 +49,41 @@ static BOOL WINAPI fake_crdbp(HANDLE hProcess, PBOOL pbDebuggerPresent)
         *pbDebuggerPresent = FALSE;
     return TRUE;
 }
+
+// --- Anti-Debug: GetThreadContext hook (DR register gizleme) ---
+
+static BYTE g_gtc_orig[8];
+static BYTE *g_gtc_addr = NULL;
+
+typedef BOOL (WINAPI *fnGetThreadContext)(HANDLE, LPCONTEXT);
+static fnGetThreadContext g_real_gtc = NULL;
+
+static BOOL WINAPI fake_gtc(HANDLE hThread, LPCONTEXT lpContext)
+{
+    BOOL ret;
+
+    if (g_real_gtc)
+        ret = g_real_gtc(hThread, lpContext);
+    else
+        ret = FALSE;
+
+    if (ret && lpContext) {
+        if (lpContext->ContextFlags & CONTEXT_DEBUG_REGISTERS) {
+            lpContext->Dr0 = 0;
+            lpContext->Dr1 = 0;
+            lpContext->Dr2 = 0;
+            lpContext->Dr3 = 0;
+            lpContext->Dr6 = 0;
+            lpContext->Dr7 = 0;
+        }
+    }
+    return ret;
+}
+
+// --- Genel hook altyapisi ---
+
+static volatile BOOL g_xmon_running = FALSE;
+static HANDLE g_xmon_thread = NULL;
 
 static BOOL patch_bytes(BYTE *target, BYTE *newBytes, int len)
 {
@@ -43,6 +95,27 @@ static BOOL patch_bytes(BYTE *target, BYTE *newBytes, int len)
     return TRUE;
 }
 
+static BOOL install_jmp_hook(BYTE *target, BYTE *detour, BYTE *backup,
+                             int saveLen)
+{
+    DWORD old;
+    if (!VirtualProtect(target, saveLen, PAGE_EXECUTE_READWRITE, &old))
+        return FALSE;
+
+    memcpy(backup, target, saveLen);
+
+    target[0] = 0xE9;
+    *(DWORD *)(target + 1) = (DWORD)(detour - target - 5);
+
+    for (int i = 5; i < saveLen; i++)
+        target[i] = 0x90;
+
+    VirtualProtect(target, saveLen, old, &old);
+    return TRUE;
+}
+
+// --- Hook kurulumlari ---
+
 static BOOL hook_crdbp(void)
 {
     HMODULE k32 = GetModuleHandleA("kernel32.dll");
@@ -51,18 +124,35 @@ static BOOL hook_crdbp(void)
     g_crdbp_addr = (BYTE *)GetProcAddress(k32, "CheckRemoteDebuggerPresent");
     if (!g_crdbp_addr) return FALSE;
 
-    DWORD old;
-    if (!VirtualProtect(g_crdbp_addr, 8, PAGE_EXECUTE_READWRITE, &old))
+    if (!install_jmp_hook(g_crdbp_addr, (BYTE *)fake_crdbp, g_crdbp_orig, 8))
         return FALSE;
 
-    memcpy(g_crdbp_orig, g_crdbp_addr, 8);
-
-    g_crdbp_addr[0] = 0xE9;
-    *(DWORD *)(g_crdbp_addr + 1) =
-        (DWORD)((BYTE *)fake_crdbp - g_crdbp_addr - 5);
-
-    VirtualProtect(g_crdbp_addr, 8, old, &old);
     log_write("X", "HOOK CRDBP @0x%p", g_crdbp_addr);
+    return TRUE;
+}
+
+static BOOL hook_getthreadcontext(void)
+{
+    HMODULE k32 = GetModuleHandleA("kernel32.dll");
+    if (!k32) return FALSE;
+
+    g_gtc_addr = (BYTE *)GetProcAddress(k32, "GetThreadContext");
+    if (!g_gtc_addr) return FALSE;
+
+    BYTE *tramp = (BYTE *)VirtualAlloc(NULL, 32,
+                                        MEM_COMMIT | MEM_RESERVE,
+                                        PAGE_EXECUTE_READWRITE);
+    if (!tramp) return FALSE;
+
+    memcpy(tramp, g_gtc_addr, 8);
+    tramp[8] = 0xE9;
+    *(DWORD *)(tramp + 9) = (DWORD)(g_gtc_addr + 8 - (tramp + 13));
+    g_real_gtc = (fnGetThreadContext)tramp;
+
+    if (!install_jmp_hook(g_gtc_addr, (BYTE *)fake_gtc, g_gtc_orig, 8))
+        return FALSE;
+
+    log_write("X", "HOOK GTC @0x%p (DR0-7 gizlendi)", g_gtc_addr);
     return TRUE;
 }
 
@@ -72,6 +162,66 @@ static void unhook_crdbp(void)
     patch_bytes(g_crdbp_addr, g_crdbp_orig, 8);
     g_crdbp_addr = NULL;
 }
+
+static void unhook_getthreadcontext(void)
+{
+    if (!g_gtc_addr) return;
+    patch_bytes(g_gtc_addr, g_gtc_orig, 8);
+    g_gtc_addr = NULL;
+}
+
+// --- DR register proaktif temizligi ---
+
+static void clear_all_dr_registers(void)
+{
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snap == INVALID_HANDLE_VALUE) return;
+
+    DWORD myPid = GetCurrentProcessId();
+    DWORD myTid = GetCurrentThreadId();
+    THREADENTRY32 te = { .dwSize = sizeof(te) };
+    int cleared = 0;
+
+    if (Thread32First(snap, &te)) {
+        do {
+            if (te.th32OwnerProcessID != myPid) continue;
+            if (te.th32ThreadID == myTid) continue;
+
+            HANDLE hThread = OpenThread(
+                THREAD_GET_CONTEXT | THREAD_SET_CONTEXT |
+                THREAD_SUSPEND_RESUME, FALSE, te.th32ThreadID);
+            if (!hThread) continue;
+
+            SuspendThread(hThread);
+
+            CONTEXT ctx;
+            ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+
+            fnGetThreadContext realGtc = g_real_gtc ? g_real_gtc :
+                (fnGetThreadContext)GetProcAddress(
+                    GetModuleHandleA("kernel32.dll"), "GetThreadContext");
+
+            if (realGtc && realGtc(hThread, &ctx)) {
+                if (ctx.Dr0 || ctx.Dr1 || ctx.Dr2 || ctx.Dr3 || ctx.Dr7) {
+                    ctx.Dr0 = 0; ctx.Dr1 = 0;
+                    ctx.Dr2 = 0; ctx.Dr3 = 0;
+                    ctx.Dr6 = 0; ctx.Dr7 = 0;
+                    SetThreadContext(hThread, &ctx);
+                    cleared++;
+                }
+            }
+
+            ResumeThread(hThread);
+            CloseHandle(hThread);
+        } while (Thread32Next(snap, &te));
+    }
+
+    CloseHandle(snap);
+    if (cleared > 0)
+        log_write("X", "DR cleared on %d threads", cleared);
+}
+
+// --- PEB/Heap patch ---
 
 static void patch_peb_flags(void)
 {
@@ -104,6 +254,8 @@ static void patch_peb_flags(void)
     log_write("X", "PEB BeingDebugged=0");
 }
 
+// --- NTDLL hook tespiti ---
+
 static void check_ntdll_hooks(void)
 {
     HMODULE ntdll = GetModuleHandleA("ntdll.dll");
@@ -128,6 +280,8 @@ static void check_ntdll_hooks(void)
         }
     }
 }
+
+// --- XIGNCODE modul taramasi ---
 
 static void scan_xign_modules(void)
 {
@@ -156,12 +310,34 @@ static void scan_xign_modules(void)
     CloseHandle(snap);
 }
 
+// --- VM/Sandbox DLL tespiti izleme ---
+
+static void check_vm_indicators(void)
+{
+    const char *vmDlls[] = {
+        "sbiedll.dll",
+        "vboxhook.dll",
+        "vmGuestLib.dll",
+        NULL
+    };
+
+    for (int i = 0; vmDlls[i]; i++) {
+        if (GetModuleHandleA(vmDlls[i])) {
+            log_write("X", "VM DLL detected: %s", vmDlls[i]);
+        }
+    }
+}
+
+// --- Ana izleme thread'i ---
+
 static DWORD WINAPI xmon_thread(LPVOID param)
 {
     (void)param;
 
     scan_xign_modules();
     check_ntdll_hooks();
+    check_vm_indicators();
+    clear_all_dr_registers();
 
     DWORD cycle = 0;
     while (g_xmon_running) {
@@ -185,22 +361,31 @@ static DWORD WINAPI xmon_thread(LPVOID param)
             }
         }
 
+        if (cycle % 5 == 0)
+            clear_all_dr_registers();
+
+        if (cycle % 30 == 0)
+            check_vm_indicators();
+
         for (int i = 0; i < 100 && g_xmon_running; i++)
             Sleep(100);
     }
     return 0;
 }
 
+// --- Public API ---
+
 void xmon_start(void)
 {
     if (g_xmon_running) return;
 
     hook_crdbp();
+    hook_getthreadcontext();
     patch_peb_flags();
 
     g_xmon_running = TRUE;
     g_xmon_thread = CreateThread(NULL, 0, xmon_thread, NULL, 0, NULL);
-    log_write("X", "xmon started");
+    log_write("X", "xmon v2 started (CRDBP+GTC+DR+PEB)");
 }
 
 void xmon_stop(void)
@@ -208,6 +393,7 @@ void xmon_stop(void)
     g_xmon_running = FALSE;
 
     unhook_crdbp();
+    unhook_getthreadcontext();
 
     if (g_xmon_thread) {
         WaitForSingleObject(g_xmon_thread, 5000);

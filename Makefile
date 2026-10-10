@@ -29,11 +29,11 @@ injector: $(OUTDIR)
 # --- Payload DLL ---
 PAYLOAD_SRCS = payload\main.c payload\log.c payload\syscall.c \
                payload\antisig.c payload\stealth.c payload\xmon.c \
-               payload\pcap.c payload\gstate.c
+               payload\pcap.c payload\gstate.c payload\forensic.c
 
 PAYLOAD_OBJS = $(OUTDIR)\main.obj $(OUTDIR)\log.obj $(OUTDIR)\syscall.obj \
                $(OUTDIR)\antisig.obj $(OUTDIR)\stealth.obj $(OUTDIR)\xmon.obj \
-               $(OUTDIR)\pcap.obj $(OUTDIR)\gstate.obj
+               $(OUTDIR)\pcap.obj $(OUTDIR)\gstate.obj $(OUTDIR)\forensic.obj
 
 payload: $(OUTDIR) $(PAYLOAD_OBJS)
 	$(LINK) $(LDFLAGS) /DLL /OUT:$(OUTDIR)\payload.dll $(PAYLOAD_OBJS) \

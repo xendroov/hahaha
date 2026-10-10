@@ -40,6 +40,7 @@ static DWORD WINAPI startup_thread(LPVOID param)
     }
 
     xmon_start();
+    forensic_start();
     pcap_start();
     gstate_start();
     return 0;
@@ -57,6 +58,7 @@ void payload_shutdown(void)
 {
     if (!g_initialized) return;
     pcap_stop();
+    forensic_stop();
     xmon_stop();
     gstate_stop();
     log_close();
